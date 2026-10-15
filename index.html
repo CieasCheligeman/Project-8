@@ -1180,6 +1180,38 @@
   body.xeno-on #quizScreen .progress-line{ background:rgba(236,238,235,0.25); }
   body.xeno-on[data-screen="result"] .scrim-read{ background:radial-gradient(ellipse 80% 70% at 50% 40%, rgba(4,5,6,0.74), rgba(4,5,6,0.5) 75%, rgba(4,5,6,0.6)); }
 
+  /* ---- motion over the live chamber: transforms and opacity only, so nothing stalls the GPU ---- */
+  @keyframes riseLite{ from{ opacity:0; transform:translate3d(0, 18px, 0); } to{ opacity:1; transform:none; } }
+  @keyframes sinkLite{ from{ opacity:1; transform:none; } to{ opacity:0; transform:translate3d(0, -14px, 0); } }
+  /* each word of the translation surfaces out of the haze */
+  @keyframes wordInk{
+    0%{ opacity:0; transform:translate3d(0, 0.45em, 0); filter:blur(3px); }
+    55%{ filter:blur(0); }
+    100%{ opacity:1; transform:none; filter:none; }
+  }
+  body.xeno-on .play .rise{ animation-name:riseLite; animation-timing-function:cubic-bezier(.16,1,.3,1); }
+  body.xeno-on .play .word{ animation-name:wordInk; animation-duration:1150ms; animation-timing-function:cubic-bezier(.2,.75,.25,1); }
+  body.xeno-on .leaving{ animation-name:sinkLite; animation-timing-function:cubic-bezier(.55,0,.75,.4); }
+  body.xeno-on #cardInner.leaving{ animation-name:inkAway; }
+  @keyframes inkAway{
+    from{ opacity:1; transform:none; filter:blur(0); }
+    to{ opacity:0; transform:translate3d(0, -10px, 0); filter:blur(4px); }
+  }
+  body.xeno-on .question-card{ transition:height 760ms cubic-bezier(.22,1,.36,1); }
+  body.xeno-on .plaque{ transition:border-color 0.5s var(--ease-out), background 0.5s var(--ease-out),
+    transform 0.5s var(--ease-out), opacity 0.6s var(--ease-out); }
+  body.xeno-on .answers.settling .plaque:not(.selected){ opacity:0.22; filter:none; }
+
+  /* phones: frosted glass over a moving 3D scene is the costliest thing on the page, so use deeper tint instead */
+  @media (pointer:coarse), (max-width:700px){
+    body.xeno-on .path, body.xeno-on .question-card, body.xeno-on .philosopher-plaque,
+    body.xeno-on .film-card, body.xeno-on .wellbeing, body.xeno-on .confirm-panel{
+      -webkit-backdrop-filter:none; backdrop-filter:none; background:rgba(11,13,15,0.86);
+    }
+    body.xeno-on .play .word{ animation-name:riseLite; }
+    body.xeno-on #cardInner.leaving{ animation-name:sinkLite; }
+  }
+
 </style>
 </head>
 <body class="arrival" data-screen="intro">
@@ -2457,6 +2489,13 @@
       }
     });
 
+    // Build the hall's echo and the noise beds in a quiet moment, not on the first touch.
+    (function(){
+      function pre(){ try{ if (on && !ac) init(); }catch(e){} }
+      if (window.requestIdleCallback) window.requestIdleCallback(pre, {timeout:4000});
+      else window.setTimeout(pre, 2000);
+    })();
+
     if (btn){
       if (!AC) btn.hidden = true;
       btn.addEventListener("click", toggle);
@@ -3093,8 +3132,24 @@
 
   var MARKS = ["A", "B", "C", "D"];
 
+  // Questions differ in length: hold the card at its old height, then ease it to the new one.
+  function morphCard(card, h0){
+    if (!h0 || REDUCED || els.quiz.hidden || !document.body.classList.contains("xeno-on")) return;
+    var h1 = card.offsetHeight;
+    if (Math.abs(h1 - h0) < 2) return;
+    window.clearTimeout(card._morph);
+    card.style.height = h0 + "px";
+    card.style.overflow = "hidden";
+    void card.offsetHeight;
+    card.style.height = h1 + "px";
+    card._morph = window.setTimeout(function(){ card.style.height = ""; card.style.overflow = ""; }, 800);
+  }
+
   function renderQuestion(){
     var q = state.plan[state.index];
+    var card = els.cardInner.parentNode;
+    if (card._morph){ window.clearTimeout(card._morph); card.style.height = ""; card.style.overflow = ""; }
+    var h0 = els.quiz.hidden ? 0 : card.offsetHeight;
     // Spoken as "Question 5 of 28", not "zero five slash twenty-eight".
     els.progressLabel.innerHTML = "";
     var shown = document.createElement("span");
@@ -3145,6 +3200,7 @@
 
     els.cardInner.classList.remove("leaving");
     sceneDo("question", q.text, state.index, state.plan.length);
+    morphCard(card, h0);
     els.backBtn.disabled = state.index === 0;
     renderTicks();
     saveProgress();
@@ -4807,6 +4863,16 @@
     }catch(e){}
   }
 
+  // Fetch every face the quiz uses now, so the first question never lays out twice when a font lands.
+  try{
+    if (document.fonts && document.fonts.load){
+      ["italic 500 24px Fraunces", "600 24px Fraunces", "400 24px Fraunces", "400 16px Newsreader",
+       "italic 400 16px Newsreader", "500 12px 'IBM Plex Mono'", "400 12px 'IBM Plex Mono'"].forEach(function(f){
+        document.fonts.load(f).catch(function(){});
+      });
+    }
+  }catch(e){}
+
   // The 3D chamber loads from a CDN; if it can't (offline, no WebGL), the ink-wash night stands in.
   window.__mt = {
     sound: sound,
@@ -4898,7 +4964,8 @@ function hashStr(s){
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.setClearColor(0x000000, 1);
-let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+const COARSE = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+let pixelRatio = Math.min(window.devicePixelRatio || 1, COARSE ? 1.25 : 1.5);
 renderer.setPixelRatio(pixelRatio);
 
 const scene = new THREE.Scene();
@@ -5058,7 +5125,7 @@ scene.add(fogBack);
 
 // Layers of drifting haze between the glass and the far fog; the heptapods move among them.
 const sheets = [];
-[-1.4, -3.4, -5.6, -8.2, -11.5, -15.5, -21].forEach((z, i) => {
+(COARSE ? [-1.4, -5.6, -11.5, -21] : [-1.4, -3.4, -5.6, -8.2, -11.5, -15.5, -21]).forEach((z, i) => {
   const m = new THREE.ShaderMaterial({
     uniforms:{time:U.time, prog:U.prog, fogBoost:U.fogBoost, light:U.light, seed:{value:i * 1.37}, z:{value:z}},
     transparent:true, depthWrite:false,
@@ -5199,7 +5266,7 @@ class Heptapod {
     this.goal = home.clone();
     this.side = side;                    // -1 on the left, +1 on the right
     this.phase = this.r() * 100;
-    this.reach = 0; this.touch = 0; this.nod = 0;
+    this.reach = 0; this.touch = 0; this.nod = 0; this.nodGoal = 0; this.handT = new THREE.Vector3();
     this.write = null;                   // {t0, target}
     this.group = new THREE.Group();
     scene.add(this.group);
@@ -5243,19 +5310,24 @@ class Heptapod {
     const bx = this.pos.x + Math.sin(ph * 0.13) * 0.32 * sway;
     const by = this.pos.y + Math.sin(ph * 0.21) * 0.18 * sway - this.nod * 0.35;
     const bz = this.pos.z + Math.cos(ph * 0.11) * 0.28 * sway;
-    this.nod *= Math.exp(-dt * 2.2);
+    this.nod += (this.nodGoal - this.nod) * (1 - Math.exp(-dt * 3.5));
+    this.nodGoal *= Math.exp(-dt * 2.4);
     this.body.position.set(bx, by, bz);
     this.body.rotation.set(Math.sin(ph * 0.17) * 0.05 * sway, ph * 0.02 * sway, Math.cos(ph * 0.15) * 0.05 * sway);
 
     // the writing gesture: reach, press, hold, withdraw
-    let reach = 0, touch = 0;
+    let reachGoal = 0, touchGoal = 0;
     if (this.write){
       const el = t - this.write.t0;
-      reach = easeInOut(el / 1.3) * (1 - easeInOut((el - 2.9) / 1.9));
-      touch = smooth((el - 1.05) / 0.45) * (1 - smooth((el - 2.7) / 0.6));
+      reachGoal = easeInOut(el / 1.3) * (1 - easeInOut((el - 2.9) / 1.9));
+      touchGoal = smooth((el - 1.05) / 0.45) * (1 - smooth((el - 2.7) / 0.6));
+      this.handT.lerp(this.write.target, 1 - Math.exp(-dt * (this.reach < 0.05 ? 60 : 2.5)));
       if (el > 5.2) this.write = null;
     }
-    this.reach = reach; this.touch = touch;
+    // follow the gesture's timeline through a soft spring, so a new question mid-gesture flows on
+    this.reach += (reachGoal - this.reach) * (REDUCED ? 1 : 1 - Math.exp(-dt * 4.5));
+    this.touch += (touchGoal - this.touch) * (REDUCED ? 1 : 1 - Math.exp(-dt * 6));
+    const reach = this.reach, touch = this.touch;
 
     this.legs.forEach((leg, k) => {
       const pos = leg.geo.attributes.position.array, nor = leg.geo.attributes.normal.array;
@@ -5268,8 +5340,8 @@ class Heptapod {
       const c1 = _b.set(root.x + out.x * 1.9, root.y - 0.35 + Math.sin(s * 0.7) * 0.25 * sway, root.z + out.z * 1.9);
       const c2 = _c.set(tipx + out.x * 0.6, tipy + 3.3, tipz + out.z * 0.6);
       const tip = _d.set(tipx, tipy, tipz);
-      if (k === this.writer && reach > 0.001 && this.write){
-        const T = this.write.target;
+      if (k === this.writer && reach > 0.001){
+        const T = this.handT;
         const e = reach;
         tip.lerp(_p.set(T.x, T.y, T.z - 0.32), e);
         c2.lerp(_p.set(T.x - this.side * 0.2, T.y - 0.6, T.z - 2.1), e);
@@ -5325,10 +5397,10 @@ const herd = [abbott, costello];
 // ---------------- logograms ----------------
 // Each is drawn once, on a canvas: a ring of ink whose weight swells and thins as it goes round,
 // sometimes broken, with spurs, hooks, blots and spatter growing off it. Same words, same ring.
-function makeLogogram(seed, S, rich){
+function mkCanvas(w, h){ const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+function makeLogogram(seed, S, rich, flip){
   const r = seeded(seed);
-  const crisp = document.createElement("canvas");
-  crisp.width = crisp.height = S;
+  const crisp = mkCanvas(S, S);
   const g = crisp.getContext("2d");
   g.fillStyle = "#000"; g.fillRect(0, 0, S, S);
   g.fillStyle = "#fff";
@@ -5438,15 +5510,14 @@ function makeLogogram(seed, S, rich){
     }
   }
   // soften: a wide smoky halo and a nearer bloom under the crisp ink (cheap blur by down-and-up scaling)
-  const out = document.createElement("canvas");
-  out.width = out.height = S;
+  const out = mkCanvas(S, S);
   const o = out.getContext("2d");
   o.fillStyle = "#000"; o.fillRect(0, 0, S, S);
   o.imageSmoothingEnabled = true; o.imageSmoothingQuality = "high";
   o.globalCompositeOperation = "lighter";
   [[S / 32, 0.55], [S / 10, 0.45]].forEach(step => {
-    const sm = document.createElement("canvas");
-    sm.width = sm.height = Math.max(8, Math.round(step[0]));
+    const smS = Math.max(8, Math.round(step[0]));
+    const sm = mkCanvas(smS, smS);
     const sg = sm.getContext("2d");
     sg.imageSmoothingEnabled = true; sg.imageSmoothingQuality = "high";
     sg.drawImage(crisp, 0, 0, sm.width, sm.height);
@@ -5455,17 +5526,94 @@ function makeLogogram(seed, S, rich){
   });
   o.globalAlpha = 1;
   o.drawImage(crisp, 0, 0);
-  return out;
+  if (!flip) return out;
+  // bitmaps upload without a flip, so turn it over here
+  const f = mkCanvas(S, S), fg = f.getContext("2d");
+  fg.setTransform(1, 0, 0, -1, 0, S);
+  fg.drawImage(out, 0, 0);
+  return f;
 }
 
-function inkTexture(seed, S, rich){
-  const tex = new THREE.CanvasTexture(makeLogogram(seed, S, rich));
+function setupTex(tex){
   tex.colorSpace = THREE.NoColorSpace;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = 4;
+  tex.needsUpdate = true;
   return tex;
+}
+function canvasTexture(seed, S, rich){ return setupTex(new THREE.CanvasTexture(makeLogogram(seed, S, rich, false))); }
+function bitmapTexture(bmp){ const t = new THREE.Texture(bmp); t.flipY = false; return setupTex(t); }
+
+// A worker paints the ink so the page never stalls while a question changes.
+let painter = null, reqId = 0;
+const waiting = new Map();
+try{
+  if (typeof OffscreenCanvas !== "undefined" && typeof Worker !== "undefined"){
+    const src = "const TAU = Math.PI * 2; const lerp = (a, b, t) => a + (b - a) * t;\n" +
+      seeded.toString() + "\nfunction mkCanvas(w, h){ return new OffscreenCanvas(w, h); }\n" + makeLogogram.toString() +
+      "\nonmessage = e => { const d = e.data; try{ const c = makeLogogram(d.seed, d.S, d.rich, true);" +
+      " const bmp = c.transferToImageBitmap(); postMessage({id:d.id, bmp}, [bmp]); }catch(err){ postMessage({id:d.id, err:String(err)}); } };";
+    painter = new Worker(URL.createObjectURL(new Blob([src], {type:"text/javascript"})));
+    painter.onmessage = e => {
+      const w = waiting.get(e.data.id);
+      waiting.delete(e.data.id);
+      if (!w) return;
+      if (e.data.bmp) w.resolve(bitmapTexture(e.data.bmp));
+      else w.resolve(canvasTexture(w.seed, w.S, w.rich));
+    };
+    painter.onerror = () => {
+      painter = null;
+      waiting.forEach(w => w.resolve(canvasTexture(w.seed, w.S, w.rich)));
+      waiting.clear();
+    };
+  }
+}catch(e){ painter = null; }
+
+const texCache = new Map();
+const TEX_BUDGET = 14 * 1024 * 1024;
+function inUse(tex){
+  return pool.some(s => s.u.map.value === tex) || big.u.map.value === tex ||
+    orbit.items.some(it => it.mesh.material.uniforms.map.value === tex);
+}
+function evict(){
+  const arr = [...texCache.values()].filter(e => e.tex).sort((a, b) => a.last - b.last);
+  let total = arr.reduce((n, e) => n + e.S * e.S, 0);
+  for (const e of arr){
+    if (total <= TEX_BUDGET) break;
+    if (inUse(e.tex)) continue;
+    e.tex.dispose();
+    if (e.tex.image && e.tex.image.close) e.tex.image.close();
+    texCache.delete(e.key);
+    total -= e.S * e.S;
+  }
+}
+function getInk(seed, S, rich){
+  const key = seed + ":" + S + ":" + (rich ? 1 : 0);
+  let e = texCache.get(key);
+  if (!e){
+    e = {key, S};
+    e.promise = new Promise(res => {
+      if (painter){
+        const id = ++reqId;
+        waiting.set(id, {resolve:res, seed, S, rich});
+        painter.postMessage({id, seed, S, rich});
+      } else {
+        // no worker: paint in a quiet moment rather than mid-transition
+        const go = () => res(canvasTexture(seed, S, rich));
+        if (window.requestIdleCallback) window.requestIdleCallback(go, {timeout:300}); else setTimeout(go, 30);
+      }
+    }).then(tex => {
+      e.tex = tex;
+      try{ renderer.initTexture(tex); }catch(_){}
+      evict();
+      return tex;
+    });
+    texCache.set(key, e);
+  }
+  e.last = performance.now();
+  return e.promise;
 }
 
 // Ink in the air: revealed outward from where the hand touched, billowing as it settles,
@@ -5504,7 +5652,7 @@ function inkMaterial(){
 }
 
 const INK_SIZE = 4.9;
-const pool = [0, 1, 2].map(i => {
+const pool = [0, 1, 2, 3].map(i => {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(INK_SIZE, INK_SIZE), inkMaterial());
   m.position.copy(INK_C);
   m.position.z -= i * 0.01;
@@ -5647,7 +5795,7 @@ const cam = {
   pos:new THREE.Vector3(0, 1.7, 46), look:new THREE.Vector3(0, 1.7, 0), tilt:0, roll:Math.PI / 2,
   from:null, t0:0, dur:0, screen:"intro", screenT0:0
 };
-const frame = {yc:0.46, rad:0.2, ok:false};
+const frame = {yc:0.46, rad:0.2, gyc:0.46, grad:0.2, ok:false, init:false};
 const pointer = {x:0, y:0, tx:0, ty:0};
 let shake = 0, white = 0, whiteGoal = 0;
 
@@ -5691,12 +5839,15 @@ function measureQuiz(){
   const line = document.querySelector("#quizScreen .progress-line");
   const hud = document.querySelector("#quizScreen .xeno-hud");
   if (!line || !hud || document.getElementById("quizScreen").hidden) return;
-  const a = line.getBoundingClientRect().bottom, b = hud.getBoundingClientRect().top;
+  // layout positions, not on-screen ones: entrance animations and scrolling must not steer the camera
+  const top = el => { let y = 0; while (el){ y += el.offsetTop; el = el.offsetParent; } return y; };
+  const a = top(line) + line.offsetHeight, b = top(hud);
   const H = window.innerHeight;
-  if (b - a < 60 || a < -10){ frame.ok = false; return; }
+  if (b - a < 60){ frame.ok = false; return; }
   const yc = (a + b) / 2;
-  frame.yc = clamp(1 - 2 * yc / H, -0.2, 0.85);
-  frame.rad = clamp((b - a) * 0.5 / (H / 2), 0.08, 0.45);
+  frame.gyc = clamp(1 - 2 * yc / H, -0.2, 0.85);
+  frame.grad = clamp((b - a) * 0.5 / (H / 2), 0.08, 0.45);
+  if (!frame.init){ frame.yc = frame.gyc; frame.rad = frame.grad; frame.init = true; }
   frame.ok = true;
 }
 
@@ -5739,10 +5890,10 @@ function updateCamera(dt){
   camera.rotateZ(cam.roll);
   if (!REDUCED){
     // a handheld camera, breathing
-    camera.rotateX(Math.sin(t * 0.37) * 0.003 + Math.sin(t * 0.91) * 0.0012 + (Math.random() - 0.5) * shake * 0.01);
-    camera.rotateY(Math.sin(t * 0.29 + 1.0) * 0.003 + (Math.random() - 0.5) * shake * 0.01);
+    camera.rotateX(Math.sin(t * 0.37) * 0.003 + Math.sin(t * 0.91) * 0.0012 + Math.sin(t * 17.0) * shake * 0.0032);
+    camera.rotateY(Math.sin(t * 0.29 + 1.0) * 0.003 + Math.sin(t * 13.0 + 1.0) * shake * 0.0022);
   }
-  shake *= Math.exp(-dt * 5);
+  shake *= Math.exp(-dt * 3.2);
 }
 
 // ---------------- what the page tells the chamber ----------------
@@ -5757,10 +5908,17 @@ function writeQuestion(text, index){
   if (current && current.key === key && current.alive) return;
   if (current){ current.fadeAt = t; }
   // take the slot that has been gone longest
-  const slot = pool.filter(s => s !== current).sort((a, b) => a.fadeAt - b.fadeAt)[0];
-  if (slot.u.map.value) slot.u.map.value.dispose();
+  const slot = pool.find(s => s !== current && !s.mesh.visible) ||
+    pool.filter(s => s !== current).sort((a, b) => a.fadeAt - b.fadeAt)[0];
   const seed = hashStr(text);
-  slot.u.map.value = inkTexture(seed, 1024, false);
+  slot.u.map.value = null;
+  getInk(seed, 1024, false).then(tex => {
+    if (slot.key !== key) return;
+    slot.u.map.value = tex;
+    // if the ink arrived late, let the writing begin now rather than half-done
+    const now = U.time.value;
+    if (now > slot.t0 - 0.1) slot.t0 = now + 0.1;
+  });
   slot.u.seed.value = (seed % 1000) / 37;
   slot.u.reveal.value = REDUCED ? 1 : 0;
   slot.u.fade.value = 0;
@@ -5782,8 +5940,9 @@ function writeQuestion(text, index){
   slot.theta = theta; slot.ringR = ringR;
   slot.sprayed = REDUCED;
   if (!REDUCED){
-    h.write = {t0:t, target};
-    h.nod = 0.4;
+    // already reaching? carry on from there instead of starting the gesture over
+    h.write = {t0:t - (h.reach > 0.5 ? 0.9 : 0), target};
+    h.nodGoal = 0.4;
   }
   slot.writer = h;
 
@@ -5797,9 +5956,15 @@ function writeQuestion(text, index){
 function writeResult(code, texts){
   const t = U.time.value;
   if (current){ current.fadeAt = t; current = null; }
-  if (big.u.map.value) big.u.map.value.dispose();
   const seed = hashStr("result:" + (code || "?"));
-  big.u.map.value = inkTexture(seed, 2048, true);
+  big.u.map.value = null;
+  big.seed = seed;
+  getInk(seed, 2048, true).then(tex => {
+    if (big.seed !== seed) return;
+    big.u.map.value = tex;
+    const now = U.time.value;
+    if (now > big.t0 - 0.1) big.t0 = now + 0.1;
+  });
   big.u.seed.value = (seed % 1000) / 41;
   big.u.reveal.value = REDUCED ? 1 : 0;
   big.u.fade.value = 0;
@@ -5813,7 +5978,7 @@ function writeResult(code, texts){
     costello.write = {t0:t + 0.35, target:new THREE.Vector3(BIG_C.x + R * 0.96, BIG_C.y + R * 0.28, INK_Z)};
   }
   // every question at once, in a slow ring: they never had to wait for the end to know it
-  orbit.items.forEach(it => { it.mesh.material.uniforms.map.value.dispose(); it.mesh.material.dispose(); orbit.group.remove(it.mesh); });
+  orbit.items.forEach(it => { it.mesh.material.dispose(); orbit.group.remove(it.mesh); });
   orbit.items = [];
   const list = (texts || []).filter(Boolean);
   const step = Math.max(1, Math.ceil(list.length / 22));
@@ -5821,7 +5986,7 @@ function writeResult(code, texts){
   chosen.forEach((tx, i) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), inkMaterial());
     const s = hashStr(tx);
-    m.material.uniforms.map.value = inkTexture(s, 256, false);
+    getInk(s, 256, false).then(tex => { if (m.parent) m.material.uniforms.map.value = tex; });
     m.material.uniforms.seed.value = (s % 1000) / 29;
     m.material.uniforms.start.value = Math.random() * TAU;
     m.material.uniforms.fade.value = 0;
@@ -5855,11 +6020,19 @@ const API = {
     if (name === "result") writeResult(info && info.code, info && info.texts);
     else clearResult();
   },
-  question(text, index){ writeQuestion(text, index); measureSoon(); },
+  question(text, index){
+    writeQuestion(text, index);
+    measureSoon();
+    // paint the next two while this one is being read
+    try{
+      const st = MT.peek ? MT.peek() : null;
+      if (st && st.texts) [index + 1, index + 2].forEach(i => { if (st.texts[i]) getInk(hashStr(st.texts[i]), 1024, false); });
+    }catch(e){}
+  },
   answer(){
     if (current) current.u.shiver.value = 1;
     shake = REDUCED ? 0 : 0.5;
-    if (current && current.writer) current.writer.nod = 0.5;
+    if (current && current.writer) current.writer.nodGoal = 0.5;
   },
   progress(p){ U.prog.goal = clamp(p, 0, 1); },
   ripple(){}, petals(){}
@@ -5888,14 +6061,17 @@ window.addEventListener("pointermove", e => {
   pointer.ty = e.clientY / window.innerHeight - 0.5;
 }, {passive:true});
 
-let frames = 0, slowSum = 0, last = performance.now();
+let frames = 0, slowSum = 0, slowN = 0, last = performance.now();
+const bootAt = performance.now();
 function adapt(ms){
   frames++;
-  slowSum += ms;
-  if (frames % 90 === 0){
-    const avg = slowSum / 90;
-    slowSum = 0;
-    if (avg > 26 && pixelRatio > 0.75){
+  // judge steady-state speed only: skip warm-up, one-off spikes, and camera moves
+  if (performance.now() - bootAt < 5000 || ms > 120 || document.hidden) return;
+  slowSum += ms; slowN++;
+  if (slowN >= 180){
+    const avg = slowSum / slowN;
+    slowSum = 0; slowN = 0;
+    if (avg > 28 && pixelRatio > 0.75){
       pixelRatio = Math.max(0.75, pixelRatio - 0.25);
       renderer.setPixelRatio(pixelRatio);
       resize();
@@ -5907,9 +6083,10 @@ function adapt(ms){
 // ---------------- the loop ----------------
 const clock = {t:0};
 function tick(now){
-  const raw = Math.min(0.1, (now - last) / 1000);
+  const frameMs = now - last;
+  const raw = Math.min(0.05, frameMs / 1000);
   last = now;
-  adapt(raw * 1000);
+  adapt(frameMs);
   const dt = raw;
   const t = clock.t += REDUCED ? dt * 0.15 : dt;
   U.time.value = t;
@@ -5917,14 +6094,16 @@ function tick(now){
   U.fogBoost.value += (U.fogBoost.goal - U.fogBoost.value) * (1 - Math.exp(-dt * 0.8));
 
   if (measureAt && now > measureAt){ measureAt = 0; measureQuiz(); }
-  if (cam.screen === "quiz" && frames % 30 === 0) measureQuiz();
+  if (cam.screen === "quiz" && frames % 60 === 0) measureQuiz();
+  frame.yc += (frame.gyc - frame.yc) * (1 - Math.exp(-dt * 1.8));
+  frame.rad += (frame.grad - frame.rad) * (1 - Math.exp(-dt * 1.8));
 
   // the questions' ink
   pool.forEach(s => {
     if (!s.mesh.visible) return;
     const u = s.u;
     if (s.alive){
-      if (!s.sprayed && t >= s.t0){
+      if (!s.sprayed && s.u.map.value && t >= s.t0){
         s.sprayed = true;
         burst(INK_C, s.ringR, s.theta);
         try{ MT.sound && MT.sound.voice && MT.sound.voice(s.writer && s.writer.side < 0 ? -0.35 : 0.35); }catch(e){}
@@ -5933,7 +6112,7 @@ function tick(now){
       u.shiver.value *= Math.exp(-dt * 1.6);
     }
     if (t > s.fadeAt){
-      u.fade.value = REDUCED ? 1 : clamp((t - s.fadeAt) / 3.2, 0, 1);
+      u.fade.value = REDUCED ? 1 : clamp((t - s.fadeAt) / 2.8, 0, 1);
       if (u.fade.value >= 1){ s.mesh.visible = false; s.alive = false; }
     }
   });
@@ -5958,7 +6137,7 @@ function tick(now){
       if (orbit.fadeAt && t > orbit.fadeAt) u.fade.value = clamp((t - orbit.fadeAt) / 2.0, 0, 1);
     });
     if (orbit.fadeAt && t > orbit.fadeAt + 2.2){
-      orbit.items.forEach(it => { it.mesh.material.uniforms.map.value.dispose(); it.mesh.material.dispose(); orbit.group.remove(it.mesh); });
+      orbit.items.forEach(it => { it.mesh.material.dispose(); orbit.group.remove(it.mesh); });
       orbit.items = []; orbit.fadeAt = 0;
     }
   }
@@ -5985,6 +6164,10 @@ function tick(now){
 // ---------------- start ----------------
 try{
   resize();
+  const warm = [...pool.map(s => s.mesh), big.mesh, abbott.hand, costello.hand];
+  warm.forEach(m => { m.visible = true; });
+  composer.render(0.016);
+  warm.forEach(m => { m.visible = false; });
   composer.render(0.016);
   // catch up with wherever the page already is (resumed, restored, or mid-quiz)
   const st = MT.peek ? MT.peek() : {screen:"intro"};
