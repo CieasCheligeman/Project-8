@@ -1096,7 +1096,7 @@
      The chamber is always dark, so the palette is one, whatever the device's mode. */
   :root, :root[data-theme], :root:not([data-theme="dark"]){
     --bg:#07080A !important; --surface:#111316 !important; --surface-raised:#171A1E !important; --border:#272C31 !important;
-    --text:#ECEEEB !important; --text-dim:#AEB4B4 !important; --text-faint:#8B9294 !important;
+    --text:#ECEEEB !important; --text-dim:#B4BABA !important; --text-faint:#9BA2A3 !important;
     --brass:#D9CBA6 !important; --brass-soft:rgba(217,203,166,0.14) !important;
     --oxblood:#CF9487 !important; --oxblood-soft:rgba(207,148,135,0.15) !important;
     --teal:#92BAB8 !important; --teal-soft:rgba(146,186,184,0.15) !important;
@@ -1115,7 +1115,7 @@
   .scrim-read{ background:radial-gradient(ellipse 120% 90% at 50% 45%, rgba(4,5,6,0.62), rgba(4,5,6,0.38) 70%, rgba(4,5,6,0.5)); }
   .scrim-quiz{
     background:
-      linear-gradient(to bottom, rgba(4,5,6,0.78) 0, rgba(4,5,6,0.5) 90px, rgba(4,5,6,0) 170px),
+      linear-gradient(to bottom, rgba(4,5,6,0.9) 0, rgba(4,5,6,0.86) 112px, rgba(4,5,6,0) 200px),
       linear-gradient(to top, rgba(4,5,6,0.8) 0, rgba(4,5,6,0.35) 45%, rgba(4,5,6,0) 62%);
   }
   body.xeno-on[data-screen="intro"] .scrim-read{ opacity:0.55; }
@@ -1211,6 +1211,30 @@
     body.xeno-on .play .word{ animation-name:riseLite; }
     body.xeno-on #cardInner.leaving{ animation-name:sinkLite; }
   }
+
+  /* ---- contrast: nothing readable is ever left standing on bare fog ---- */
+  /* the top controls carry their own dark ground, so they read over the white of the fog too */
+  body.xeno-on .sound-toggle{ background:rgba(9,10,12,0.86); border-color:rgba(236,238,235,0.16); color:#E3E7E6; }
+  body.xeno-on .sound-toggle .sound-label{ color:#E3E7E6; }
+  /* the translation readout is a tag with its own dark ground, sitting at the foot of the bright window */
+  body.xeno-on .xeno-hud{
+    display:inline-flex; padding:7px 14px; border-radius:999px; color:#D3D8D7; text-shadow:none;
+    background:rgba(7,8,10,0.86); border:1px solid rgba(236,238,235,0.1);
+  }
+  body.xeno-on .xeno-hud .hud-sep{ opacity:0.7; }
+  body.xeno-on #quizScreen .progress-label{ color:#D3D8D7; }
+  /* dimmer, quieter labels still clear 4.5:1 on the darkened chamber */
+  body.xeno-on[data-screen="result"], body.xeno-on[data-screen="pause"]{ --text-faint:#B2B8B9 !important; --text-dim:#C4C9C9 !important; }
+  /* the breath is written in ink from its first moment, while the fog rolls in behind it */
+  body.xeno-on #contemplateScreen.play{ animation:none; color:#141618; }
+  body.xeno-on .top-controls .rate-toggle{ color:transparent; }
+  body.xeno-on .top-controls .rate-toggle.shown{ color:#C9CFCE; }
+  body.xeno-on .top-controls .rate-toggle.shown:hover{ color:var(--brass); }
+  /* the weighing still breathes, but never fades below a readable ink */
+  @keyframes breatheInk{ 0%, 100%{ opacity:0.9; letter-spacing:0.2em; } 50%{ opacity:1; letter-spacing:0.32em; } }
+  body.xeno-on #contemplateScreen .breath{ animation-name:breatheInk; }
+  @media (max-aspect-ratio: 23/20){ body.xeno-on[data-screen="intro"] .scrim-read{ opacity:1; } }
+  body.xeno-on #resultHeading{ color:#D6DBDA; }
 
 </style>
 </head>
@@ -6147,12 +6171,18 @@ function tick(now){
   // into the fog, and back out of it
   if (cam.screen === "contemplate"){
     const el = t - cam.screenT0;
-    whiteGoal = REDUCED ? 0.5 : 0.86 * smooth((el - 2.3) / 2.6);
+    // the fog rolls in at once (the breath is written in dark ink on it), then swallows everything
+    whiteGoal = REDUCED ? 0.7 : 0.66 + 0.22 * smooth((el - 2.3) / 2.6);
   }
-  white += (whiteGoal - white) * (1 - Math.exp(-dt * (whiteGoal > white ? 6 : 0.9)));
+  white += (whiteGoal - white) * (1 - Math.exp(-dt * (whiteGoal > white ? 6 : 2.4)));
   film.uniforms.white.value = white;
+  // reading screens sit on a darker chamber so their words keep 4.5:1
   let dim = 0;
-  if (cam.screen === "result") dim = clamp((window.scrollY || 0) / (window.innerHeight * 1.4), 0, 0.5);
+  // on tall screens the light can't sit beside the words, so the room is dimmed further instead
+  const tall = camera.aspect < 1.15;
+  if (cam.screen === "result") dim = (tall ? 0.5 : 0.38) + clamp((window.scrollY || 0) / (window.innerHeight * 1.4), 0, 0.3);
+  if (cam.screen === "pause") dim = 0.5;
+  if (cam.screen === "intro" && tall) dim = 0.6;
   film.uniforms.dim.value += (dim - film.uniforms.dim.value) * (1 - Math.exp(-dt * 4));
   film.uniforms.time.value = t;
 
