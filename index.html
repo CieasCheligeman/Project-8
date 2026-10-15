@@ -1280,12 +1280,12 @@
     <p class="kicker rise" style="--d:1420ms" id="pathsLabel">Choose your path</p>
     <div class="paths" role="group" aria-labelledby="pathsLabel">
       <button class="path rise" style="--d:1500ms" type="button" data-version="shortest">
-        <span class="path-name">The Shortest Path</span>
+        <span class="path-name">The Short Path</span>
         <span class="path-meta">16 questions · ~4 minutes</span>
         <span class="path-desc">The fewest questions that still give all four letters of your type, and the same PHQ-4 check on mood and worry.</span>
       </button>
       <button class="path rise" style="--d:1600ms" type="button" data-version="short">
-        <span class="path-name">The Short Path</span>
+        <span class="path-name">The Middle Path</span>
         <span class="path-meta">28 questions · ~7 minutes</span>
         <span class="path-desc">A clear read of your type, and the PHQ-4: a validated four-question check on mood and worry.</span>
       </button>
@@ -3055,7 +3055,7 @@
 
   VERSIONS.shortest = {perAxis:3, items:VERSIONS.short.items, max:VERSIONS.short.max, cut:VERSIONS.short.cut,
     tier:VERSIONS.short.tier, fine:VERSIONS.short.fine};
-  var PATH_NAMES = {shortest:"the Shortest Path", short:"the Short Path", full:"the Long Path"};
+  var PATH_NAMES = {shortest:"the Short Path", short:"the Middle Path", full:"the Long Path"};
 
   // The chime climbs about two and a half octaves over the whole test, however long it is.
   function chimeStep(i){ return Math.round(i * 13 / Math.max(1, state.plan.length - 1)); }
